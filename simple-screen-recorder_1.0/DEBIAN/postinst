@@ -1,0 +1,14 @@
+#!/bin/bash
+# Create a desktop entry for the application
+cat <<EOF > /usr/share/applications/simple-screen-recorder.desktop
+[Desktop Entry]
+Name=Simple Screen Recorder
+Comment=Record your screen and audio
+Exec=/usr/bin/simple-screen-recorder
+Icon=/opt/simple-screen-recorder/assets/screenrecord.png # உங்கள் ஐகான் பாதை
+Terminal=false
+Type=Application
+Categories=Utility;Multimedia;
+EOF
+chmod +x /usr/share/applications/simple-screen-recorder.desktop
+exit 0

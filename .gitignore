@@ -1,0 +1,5 @@
+venv/
+__pycache__/
+dist/
+build/
+simple-screen-recorder_1.0/opt/
