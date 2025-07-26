@@ -21,8 +21,9 @@ class ScreenRecorder:
         self.screen_width = screen_width
         self.screen_height = screen_height
 
-        self.mic_device = "default" if platform.system() == "Linux" else None
-        self.internal_audio_device = None
+        # These will be loaded from QSettings by RecorderApp
+        self.mic_device = "default" if platform.system() == "Linux" else "None" # Default to "None" if not set
+        self.internal_audio_device = "None" # Default to "None" if not set
 
     @staticmethod
     def is_ffmpeg_available():
@@ -63,7 +64,7 @@ class ScreenRecorder:
                             else:
                                 devices["microphones"].append(device_name)
                 
-                if not devices["microphones"] and devices["internal_audio_monitors"]:
+                if not devices["microphones"] and not devices["internal_audio_monitors"]: # Fallback if no specific devices found
                      devices["microphones"].append("Default Microphone (Auto)")
 
 
@@ -75,7 +76,7 @@ class ScreenRecorder:
                         parts = line.split('\t')
                         if len(parts) > 1:
                             source_name = parts[1].strip()
-                            if ".monitor" not in source_name:
+                            if ".monitor" not in source_name: # Exclude monitor devices from microphones
                                 devices["microphones"].append(source_name)
                 
                 monitor_command = ["pactl", "list", "short", "sources"]
@@ -87,12 +88,12 @@ class ScreenRecorder:
                             monitor_name = parts[1].strip()
                             devices["internal_audio_monitors"].append(monitor_name)
                 
-                if not devices["microphones"]:
+                if not devices["microphones"]: # Fallback if no specific microphones found
                     devices["microphones"].append("default")
 
 
-            devices["microphones"].insert(0, "None")
-            devices["internal_audio_monitors"].insert(0, "None")
+            devices["microphones"].insert(0, "None") # Always add "None" option
+            devices["internal_audio_monitors"].insert(0, "None") # Always add "None" option
 
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             print(f"Error listing audio devices: {e}")
@@ -100,7 +101,6 @@ class ScreenRecorder:
         
         return devices
 
-    # ✅ New: Thumbnail எடுக்க ஒரு மெத்தட்
     @staticmethod
     def generate_thumbnail(video_path, thumbnail_path, size="120x90"):
         if not ScreenRecorder.is_ffmpeg_available():
@@ -108,10 +108,10 @@ class ScreenRecorder:
             return False
         
         try:
-            # -ss 00:00:01 - வீடியோவின் முதல் வினாடியில்
-            # -vframes 1 - ஒரே ஒரு ஃப்ரேம் மட்டும் எடுக்க
-            # -q:v 2 - வீடியோ தரத்தை கட்டுப்படுத்த (குறைந்த அளவு தரத்துடன் வேகமாக)
-            # -vf scale=... - அளவை மாற்ற
+            # -ss 00:00:01 - seeks to 1 second into the video
+            # -vframes 1 - grabs only one frame
+            # -q:v 2 - video quality control (faster with lower quality for thumbnail)
+            # -vf scale=... - scales the image
             command = [
                 "ffmpeg",
                 "-y", # overwrite output file if it exists
@@ -123,7 +123,7 @@ class ScreenRecorder:
                 thumbnail_path
             ]
             
-            # Windows-ல் கன்சோல் விண்டோ திறப்பதைத் தடுக்க
+            # Prevent console window from opening on Windows
             creationflags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
             
             subprocess.run(command, check=True, capture_output=True, creationflags=creationflags)
@@ -142,7 +142,6 @@ class ScreenRecorder:
 
         self.command = ["ffmpeg", "-y"]
 
-        # ... (Windows மற்றும் Linux-க்கான FFmpeg command generation logic, no change here)
         if platform.system() == "Windows":
             video_device = "screen-capture-recorder"
             if mic_input:

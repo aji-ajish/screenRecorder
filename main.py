@@ -2,20 +2,34 @@ import sys
 import os
 import webbrowser
 import platform
-import threading # ✅ threading module for safe file operations
+import threading
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QLabel,
     QSystemTrayIcon, QMenu, QAction, QComboBox, QDialog, QHBoxLayout,
-    QMessageBox, QListWidget, QListWidgetItem, QGroupBox, QSizePolicy
+    QMessageBox, QListWidget, QListWidgetItem, QGroupBox, QSizePolicy, QStyle # QStyle imported for fallback icon
 )
-from PyQt5.QtGui import QIcon, QScreen, QPixmap # ✅ Import QPixmap for images
-from PyQt5.QtCore import Qt, QRunnable, QThreadPool, pyqtSignal, QObject # ✅ Import QRunnable, QThreadPool, pyqtSignal, QObject
+from PyQt5.QtGui import QIcon, QScreen, QPixmap
+from PyQt5.QtCore import Qt, QRunnable, QThreadPool, pyqtSignal, QObject, QSettings # QSettings imported
 
 from recorder import ScreenRecorder
 import subprocess
 
-# ✅ RecorderApp-இன் ஸ்டைல் ஷீட் (CSS மாதிரி)
+# main.py
+import logging
+
+# Configure logging
+# ✅ லாக் ஃபைல் பாத்தை /tmp/ டைரக்டரிக்கு மாற்றவும்
+log_file_path = os.path.join("/tmp", "simple_screen_recorder_debug.log") 
+logging.basicConfig(
+    level=logging.DEBUG, # Set to DEBUG to see all debug messages
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    filename=log_file_path,
+    filemode='a' # Append to file
+)
+logger = logging.getLogger(__name__) # Get a logger instance
+# ---------------------------------------
+# Application stylesheet (CSS-like)
 APP_STYLE_SHEET = """
 QWidget {
     font-family: Arial;
@@ -66,7 +80,7 @@ QListWidget::item:selected {
 }
 """
 
-# ✅ ThumbnailGenerator - பேக்ரவுண்டில் thumbnail எடுக்க
+# ThumbnailGenerator - for generating thumbnails in background
 class ThumbnailGenerator(QRunnable):
     def __init__(self, video_path, thumbnail_dir, item):
         super().__init__()
@@ -94,12 +108,12 @@ class ThumbnailGenerator(QRunnable):
 class ThumbnailSignals(QObject):
     thumbnail_generated = pyqtSignal(QListWidgetItem, str) # item, thumbnail_path
 
-# ✅ RecordingsListDialog கிளாஸ்
+# RecordingsListDialog Class
 class RecordingsListDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Your Recordings")
-        self.setGeometry(200, 200, 650, 450) # ✅ Adjusted size
+        self.setGeometry(200, 200, 650, 450)
         
         self.layout = QVBoxLayout()
 
@@ -146,7 +160,7 @@ class RecordingsListDialog(QDialog):
             return
 
         # Default icon for items without thumbnail (or while loading)
-        default_icon_path = os.path.join(os.path.dirname(__file__), "assets", "default_video_icon.png") # ✅ Create this default icon
+        default_icon_path = os.path.join(os.path.dirname(__file__), "assets", "default_video_icon.png") # Create this default icon
         if not os.path.exists(default_icon_path):
             # Fallback if default_video_icon.png is not provided
             default_icon = QApplication.style().standardIcon(QStyle.SP_FileIcon) 
@@ -214,14 +228,15 @@ class RecordingsListDialog(QDialog):
             QMessageBox.warning(self, "Folder Not Found", "Recordings folder does not exist.")
 
 
-# SettingsDialog (அதே கோடு, மாற்றங்கள் இல்லை)
+# SettingsDialog Class
 class SettingsDialog(QDialog):
-    # ... (previous code for SettingsDialog)
-    def __init__(self, parent=None, recorder_instance=None):
+    # Added settings_instance to constructor to handle QSettings
+    def __init__(self, parent=None, recorder_instance=None, settings_instance=None):
         super().__init__(parent)
         self.setWindowTitle("Recorder Settings")
         self.setGeometry(200, 200, 400, 250)
         self.recorder = recorder_instance
+        self.settings = settings_instance # Assign QSettings instance here
         self.layout = QVBoxLayout()
 
         self.ffmpeg_status_label = QLabel("FFmpeg Status: Checking...")
@@ -246,7 +261,8 @@ class SettingsDialog(QDialog):
         self.internal_audio_combo = QComboBox()
         self.layout.addWidget(self.internal_audio_combo)
 
-        self.load_audio_devices()
+        self.load_audio_devices() # Loads devices into combo boxes
+        self.load_ui_settings() # Loads saved settings into UI
 
         save_button = QPushButton("Save Settings")
         save_button.clicked.connect(self.save_settings)
@@ -277,31 +293,94 @@ class SettingsDialog(QDialog):
         self.internal_audio_combo.clear()
         self.internal_audio_combo.addItems(devices["internal_audio_monitors"])
 
-        if self.recorder.mic_device in devices["microphones"]:
-            self.mic_combo.setCurrentText(self.recorder.mic_device)
-        if self.recorder.internal_audio_device in devices["internal_audio_monitors"]:
-            self.internal_audio_combo.setCurrentText(self.recorder.internal_audio_device)
+        # Note: Initial selection will be handled by load_ui_settings()
+
+    def load_ui_settings(self):
+        mic_device_from_settings = self.recorder.mic_device
+        internal_audio_device_from_settings = self.recorder.internal_audio_device
+
+        print(f"DEBUG: Mic from recorder: '{mic_device_from_settings}'")
+        print(f"DEBUG: Internal audio from recorder: '{internal_audio_device_from_settings}'")
+        
+        current_mic_items = [self.mic_combo.itemText(i) for i in range(self.mic_combo.count())]
+        current_internal_audio_items = [self.internal_audio_combo.itemText(i) for i in range(self.internal_audio_combo.count())]
+
+        print(f"DEBUG: Current mic combo items: {current_mic_items}")
+        print(f"DEBUG: Current internal audio combo items: {current_internal_audio_items}")
+
+        if mic_device_from_settings in current_mic_items:
+            self.mic_combo.setCurrentText(mic_device_from_settings)
+            print(f"DEBUG: Mic combo set to: '{self.mic_combo.currentText()}'")
+        else:
+            print(f"DEBUG: Saved mic '{mic_device_from_settings}' NOT found in combo items.")
+            if "None" in current_mic_items:
+                self.mic_combo.setCurrentText("None")
+                print(f"DEBUG: Mic combo set to default 'None'.")
+            elif self.mic_combo.count() > 0:
+                self.mic_combo.setCurrentIndex(0)
+                print(f"DEBUG: Mic combo set to first item: '{self.mic_combo.currentText()}'")
+
+
+        if internal_audio_device_from_settings in current_internal_audio_items:
+            self.internal_audio_combo.setCurrentText(internal_audio_device_from_settings)
+            print(f"DEBUG: Internal audio combo set to: '{self.internal_audio_combo.currentText()}'")
+        else:
+            print(f"DEBUG: Saved internal audio '{internal_audio_device_from_settings}' NOT found in combo items.")
+            if "None" in current_internal_audio_items:
+                self.internal_audio_combo.setCurrentText("None")
+                print(f"DEBUG: Internal audio combo set to default 'None'.")
+            elif self.internal_audio_combo.count() > 0:
+                self.internal_audio_combo.setCurrentIndex(0)
+                print(f"DEBUG: Internal audio combo set to first item: '{self.internal_audio_combo.currentText()}'")
+        
+        print(f"Loaded settings into UI (final): Mic='{self.mic_combo.currentText()}', Internal='{self.internal_audio_combo.currentText()}'")
 
 
     def save_settings(self):
+        # Update recorder instance with current UI selections
         self.recorder.mic_device = self.mic_combo.currentText()
         self.recorder.internal_audio_device = self.internal_audio_combo.currentText()
+        
+        # Call the save_recorder_settings method from the parent (RecorderApp)
+        if self.parent() and hasattr(self.parent(), 'save_recorder_settings'):
+            self.parent().save_recorder_settings() 
+
         QMessageBox.information(self, "Settings Saved", "Your audio recording settings have been saved.")
         self.accept()
 
-# RecorderApp (அதே கோடு, புதிய dialog மற்றும் ஸ்டைலிங் சேர்த்தது)
+# RecorderApp Class
 class RecorderApp(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Simple Screen Recorder")
         self.setGeometry(100, 100, 350, 250)
-        self.hide() 
+        self.hide() # Hide on startup, use tray icon
+        # Ensure settings are saved when the app truly quits
+        QApplication.instance().aboutToQuit.connect(self.save_recorder_settings)
 
-        self.icon_path = os.path.join(os.path.dirname(__file__), "assets", "screenrecord.png")
+        # --- Icon path fix starts here ---
+        # 1. First, assume the .deb installation path (with _internal)
+        self.icon_path = "/opt/simple-screen-recorder/_internal/assets/screenrecord.png"
+        
+        # 2. If the .deb path doesn't exist, check for PyInstaller or direct execution paths
+        if not os.path.exists(self.icon_path):
+            if getattr(sys, 'frozen', False):
+                # For PyInstaller builds, assets are usually in sys._MEIPASS
+                self.icon_path = os.path.join(sys._MEIPASS, "assets", "screenrecord.png")
+            else:
+                # For direct Python execution (development)
+                self.icon_path = os.path.join(os.path.dirname(__file__), "assets", "screenrecord.png")
+
+        # 3. Apply the icon if found, otherwise use a fallback
         if os.path.exists(self.icon_path):
             self.setWindowIcon(QIcon(self.icon_path))
+            # Also set the application-wide icon for consistency across environments
+            QApplication.instance().setWindowIcon(QIcon(self.icon_path)) 
         else:
-            print(f"Warning: App icon file not found at {self.icon_path}.")
+            logger.warning(f"App icon file not found at {self.icon_path}. Using default system icon.")
+            self.setWindowIcon(QApplication.style().standardIcon(QStyle.SP_ComputerIcon)) # Fallback icon
+            QApplication.instance().setWindowIcon(QApplication.style().standardIcon(QStyle.SP_ComputerIcon)) # Set app icon fallback
+        # --- Icon path fix ends here ---
 
         QApplication.instance().setStyleSheet(APP_STYLE_SHEET)
 
@@ -352,20 +431,50 @@ class RecorderApp(QWidget):
         self.screen_width = screen_geometry.width()
         self.screen_height = screen_geometry.height()
 
+        # Initialize QSettings for the application
+        self.settings = QSettings("Ajish", "SimpleScreenRecorder") # IMPORTANT: Use unique names
+
         self.recorder = ScreenRecorder(output_file="recording.mp4",
                                        screen_width=self.screen_width,
                                        screen_height=self.screen_height)
+        
+        # Load recorder settings from QSettings
+        self.load_recorder_settings()
 
         self.create_tray_icon()
         self.check_ffmpeg_on_startup()
 
+    def load_recorder_settings(self):
+        # Explicitly read as string, and provide a default string "None"
+        mic = self.settings.value("micDevice", "None", type=str) 
+        internal_audio = self.settings.value("internalAudioDevice", "None", type=str) 
+        
+        # Apply loaded settings to the recorder instance
+        self.recorder.mic_device = mic
+        self.recorder.internal_audio_device = internal_audio
+        
+        print(f"Loaded settings into recorder: Mic='{self.recorder.mic_device}', Internal='{self.recorder.internal_audio_device}'")
+
+    def save_recorder_settings(self):
+        # Save mic and internal audio device settings from recorder to QSettings
+        # Ensure values are strings, convert None to "None" string if necessary
+        mic_to_save = str(self.recorder.mic_device) if self.recorder.mic_device is not None else "None"
+        internal_audio_to_save = str(self.recorder.internal_audio_device) if self.recorder.internal_audio_device is not None else "None"
+
+        self.settings.setValue("micDevice", mic_to_save)
+        self.settings.setValue("internalAudioDevice", internal_audio_to_save)
+        self.settings.sync() # Ensures settings are written to disk immediately
+        print(f"Settings saved to QSettings: Mic='{mic_to_save}', Internal='{internal_audio_to_save}'")
+
+
 
     def create_tray_icon(self):
+        # Use the determined self.icon_path for the tray icon
         if os.path.exists(self.icon_path):
             self.tray_icon = QSystemTrayIcon(QIcon(self.icon_path), self)
         else:
             print(f"Warning: Tray icon file not found at {self.icon_path}. Using default.")
-            self.tray_icon = QSystemTrayIcon(self)
+            self.tray_icon = QSystemTrayIcon(self) # Fallback to default system tray icon
         
         self.tray_icon.setToolTip("Simple Screen Recorder")
 
@@ -440,11 +549,12 @@ class RecorderApp(QWidget):
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.start_record_action.setEnabled(True)
-        self.stop_record_action.setEnabled(False)
+        self.stop_record_action.setEnabled(True) # Should be false after stopping
         print("Recording stopped from UI or Tray.")
 
     def open_settings(self):
-        dialog = SettingsDialog(self, self.recorder)
+        # Pass both recorder_instance and settings_instance to SettingsDialog
+        dialog = SettingsDialog(self, recorder_instance=self.recorder, settings_instance=self.settings)
         dialog.exec_()
         if self.recorder.is_ffmpeg_available():
             self.start_button.setEnabled(True)
@@ -455,20 +565,21 @@ class RecorderApp(QWidget):
         dialog.exec_()
 
     def closeEvent(self, event):
+        # When the main window is closed, hide it to tray instead of quitting
+        # Also, ensure settings are saved when the app is truly closing (e.g. from tray menu Exit)
         self.hide()
-        event.ignore()
+        event.ignore() # This ensures the application does not quit immediately
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     
-    # ✅ QStyle-ஐ இம்போர்ட் செய்யவும், default_icon-க்கு தேவைப்படலாம்
-    from PyQt5.QtWidgets import QStyle 
-    
-    if not QSystemTrayIcon.isSystemTrayAvailable():
-        print("System Tray is not available on this system. Exiting.")
-        sys.exit(1)
+    # Set organization and application names BEFORE QSettings is used for the first time
+    # These names determine the path where settings are stored (e.g., ~/.config/YourOrganization/SimpleScreenRecorder.conf)
+    app.setOrganizationName("Ajish") # Replace with YOUR organization name (e.g., "AjishDev")
+    app.setApplicationName("SimpleScreenRecorder") # Replace with YOUR app name (e.g., "SSR")
 
-    app.setQuitOnLastWindowClosed(False)
+    # This ensures the application doesn't quit when the last window is closed, but stays in the tray
+    app.setQuitOnLastWindowClosed(False) 
     
     window = RecorderApp()
     sys.exit(app.exec_())
