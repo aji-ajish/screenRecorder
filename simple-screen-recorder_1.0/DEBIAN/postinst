@@ -1,0 +1,43 @@
+#!/bin/bash
+
+# 1. Create the main desktop entry
+cat <<EOF > /usr/share/applications/simple-screen-recorder.desktop
+[Desktop Entry]
+Name=Simple Screen Recorder
+Comment=Record your screen and audio
+Exec=bash -c "sleep 5 && /usr/bin/simple-screen-recorder > /tmp/simple_screen_recorder_debug.log 2>&1"
+Icon=/opt/simple-screen-recorder/_internal/assets/screenrecord.png
+Terminal=false
+Type=Application
+Categories=Utility;Multimedia;
+EOF
+
+# 2. Set proper permissions for the main desktop entry (if not already set by cat/redirect)
+chmod 644 /usr/share/applications/simple-screen-recorder.desktop
+
+
+# 3. Set execute permission for the /usr/bin script
+# ✅ இதுதான் முக்கியம்: ஸ்கிரிப்ட்டை இயக்கும் அனுமதி
+chmod +x /usr/bin/simple-screen-recorder
+
+# 4. Set read permission for the icon file (if it's not already correct)
+# ✅ ஐகான் ஃபைலுக்கு படிக்க அனுமதி
+chmod 644 /opt/simple-screen-recorder/_internal/assets/screenrecord.png
+
+# 5. Optional: Ensure root ownership for installed files (dpkg usually handles this, but good to be explicit)
+chown root:root /usr/bin/simple-screen-recorder
+chown root:root /opt/simple-screen-recorder/_internal/assets/screenrecord.png
+chown root:root /opt/simple-screen-recorder/_internal/assets/* # If there are other assets you want owned by root
+
+
+# 6. Copy to autostart directory for system-wide startup
+# The 'sudo' is not needed within a postinst script as it already runs as root
+cp /usr/share/applications/simple-screen-recorder.desktop /etc/xdg/autostart/simple-screen-recorder.desktop
+chmod 644 /etc/xdg/autostart/simple-screen-recorder.desktop
+chown root:root /etc/xdg/autostart/simple-screen-recorder.desktop
+
+
+# 7. Update desktop database for new applications
+update-desktop-database
+
+exit 0

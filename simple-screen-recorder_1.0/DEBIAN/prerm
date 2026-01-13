@@ -1,0 +1,3 @@
+#!/bin/bash
+rm -f /usr/share/applications/simple-screen-recorder.desktop
+exit 0
